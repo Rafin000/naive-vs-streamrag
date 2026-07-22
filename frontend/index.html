@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StreamRAG vs Naive RAG</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.3rem; }
+    .row { display: flex; gap: .5rem; margin: 1rem 0; }
+    input, select, button { padding: .6rem; font-size: 1rem; }
+    input { flex: 1; }
+    #answer { white-space: pre-wrap; padding: 1rem; border: 1px solid #8884; border-radius: 8px; min-height: 3rem; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .5rem; margin-top: 1rem; }
+    .metric { border: 1px solid #8884; border-radius: 8px; padding: .6rem; }
+    .metric b { display: block; font-size: 1.2rem; }
+    .metric span { font-size: .75rem; opacity: .7; }
+  </style>
+</head>
+<body>
+  <h1>StreamRAG vs Naive RAG</h1>
+  <div class="row">
+    <input id="query" placeholder="Ask something about RAG, embeddings, agents..." />
+    <select id="path">
+      <option value="naive">Naive</option>
+      <option value="stream">Stream</option>
+    </select>
+    <button id="send">Ask</button>
+  </div>
+  <div id="answer"></div>
+  <div class="metrics" id="metrics"></div>
+
+  <script>
+    const API = "http://localhost:8000/ask";
+    const session = crypto.randomUUID();
+    const answerEl = document.getElementById("answer");
+    const metricsEl = document.getElementById("metrics");
+
+    function renderMetrics(m) {
+      const cost = (m.prompt_tokens * 0.15 + m.completion_tokens * 0.60) / 1e6;
+      const cells = [
+        ["TTFT", m.ttft_ms.toFixed(0) + " ms"],
+        ["Total", m.total_ms.toFixed(0) + " ms"],
+        ["Prompt tok", m.prompt_tokens],
+        ["Output tok", m.completion_tokens],
+        ["LLM calls", m.llm_calls],
+        ["Cost", "$" + cost.toFixed(6)],
+      ];
+      metricsEl.innerHTML = cells.map(([k, v]) => `<div class="metric"><b>${v}</b><span>${k}</span></div>`).join("");
+    }
+
+    async function ask() {
+      answerEl.textContent = "";
+      metricsEl.innerHTML = "";
+      const res = await fetch(API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: session,
+          query: document.getElementById("query").value,
+          path: document.getElementById("path").value,
+        }),
+      });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop();
+        for (const ev of events) {
+          if (ev.startsWith("event: metrics")) {
+            renderMetrics(JSON.parse(ev.split("data: ")[1]));
+          } else if (ev.startsWith("data: ")) {
+            const payload = JSON.parse(ev.slice(6));
+            if (payload.token) answerEl.textContent += payload.token;
+          }
+        }
+      }
+    }
+
+    document.getElementById("send").addEventListener("click", ask);
+    document.getElementById("query").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+  </script>
+</body>
+</html>

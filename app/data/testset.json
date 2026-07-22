@@ -1,0 +1,7 @@
+[
+  {"question": "What is time to first token?", "expected": "The delay before the user sees the first piece of a streamed response."},
+  {"question": "Why does naive RAG have higher TTFT?", "expected": "Because retrieval must finish before generation starts, so the user waits longer for the first token."},
+  {"question": "How does StreamRAG reduce latency?", "expected": "By running retrieval concurrently and streaming tokens as they are generated."},
+  {"question": "What does an embedding do?", "expected": "Maps text to a vector so semantically similar text is close together, compared with cosine similarity."},
+  {"question": "What is memory in an agent harness?", "expected": "The running message list that is resent each turn; older turns are summarized when it grows too large."}
+]
