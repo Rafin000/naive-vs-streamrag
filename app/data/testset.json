@@ -1,7 +1,17 @@
 [
   {"question": "What is time to first token?", "expected": "The delay before the user sees the first piece of a streamed response."},
-  {"question": "Why does naive RAG have higher TTFT?", "expected": "Because retrieval must finish before generation starts, so the user waits longer for the first token."},
-  {"question": "How does StreamRAG reduce latency?", "expected": "By running retrieval concurrently and streaming tokens as they are generated."},
-  {"question": "What does an embedding do?", "expected": "Maps text to a vector so semantically similar text is close together, compared with cosine similarity."},
-  {"question": "What is memory in an agent harness?", "expected": "The running message list that is resent each turn; older turns are summarized when it grows too large."}
+  {"question": "Why does naive RAG have higher time to first token?", "expected": "Because retrieval must finish before generation starts, so the user waits longer for the first token."},
+  {"question": "How does StreamRAG reduce latency?", "expected": "By overlapping retrieval with the request using async concurrency and streaming tokens as they are generated."},
+  {"question": "What does an embedding do?", "expected": "Maps text to a vector so semantically similar text is close together, compared using cosine similarity."},
+  {"question": "How is cosine similarity calculated?", "expected": "The dot product of two vectors divided by the product of their magnitudes, giving a value from -1 to 1, where higher means more relevant."},
+  {"question": "Why is chunking documents important?", "expected": "It splits long documents into passages so chunks are neither too large (diluting relevance) nor too small (losing meaning), often with overlap."},
+  {"question": "What is a vector database and give examples?", "expected": "A store for embeddings with fast nearest-neighbor search, such as pgvector, Qdrant, or Cloudflare Vectorize."},
+  {"question": "How does retrieved context affect cost?", "expected": "Larger context raises the input token count and therefore the cost, so retrieving fewer relevant chunks keeps answers cheaper."},
+  {"question": "What is the context window?", "expected": "The maximum number of tokens a model can consider at once, including system prompt, history, retrieved context, and the answer."},
+  {"question": "What is tool calling in an agent?", "expected": "It lets the model invoke a function with structured arguments instead of guessing, such as using a calculator for exact arithmetic."},
+  {"question": "How does memory compression work?", "expected": "It summarizes the oldest turns into a short note and keeps recent messages verbatim to stay within the token budget."},
+  {"question": "What is LLM-as-judge?", "expected": "Using a language model to grade a candidate answer against an expected answer, handling paraphrases that a keyword match would miss."},
+  {"question": "What is the trade-off in choosing top-k?", "expected": "A small k is cheaper and more focused but may miss context, while a large k improves recall but adds tokens and noise."},
+  {"question": "How does retrieval reduce hallucination?", "expected": "By grounding the model in real documents and instructing it to answer only from the context and admit uncertainty otherwise."},
+  {"question": "How is new knowledge added in production?", "expected": "Through an ingestion pipeline where an endpoint queues documents and a worker chunks, embeds, and upserts them into a vector database asynchronously."}
 ]
