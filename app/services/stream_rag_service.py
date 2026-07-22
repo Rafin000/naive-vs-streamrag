@@ -8,7 +8,15 @@ from app.schemas.chat import Metrics
 from app.services.embedding_service import embed
 from app.services.llm_service import stream_completion
 
-SYSTEM = "Answer the question using only the provided context. If the context is insufficient, say so."
+DRAFT_SYSTEM = (
+    "Give a brief initial answer to the question in one or two sentences from your own "
+    "knowledge. Be concise and do not mention sources."
+)
+GROUNDED_SYSTEM = (
+    "Using only the provided context, continue the answer for the user. Flow naturally from "
+    "the opening reply and do not add a preamble such as 'based on the sources'. If the "
+    "context is insufficient, say so."
+)
 
 
 async def _retrieve(query: str) -> str:
@@ -17,32 +25,38 @@ async def _retrieve(query: str) -> str:
     return "\n\n".join(text for text, _ in matches)
 
 
+async def _stream(messages: list[dict], metrics: Metrics) -> AsyncIterator[str]:
+    metrics.llm_calls += 1
+    stream = await stream_completion(messages)
+    async for chunk in stream:
+        if chunk.usage:
+            metrics.prompt_tokens += chunk.usage.prompt_tokens
+            metrics.completion_tokens += chunk.usage.completion_tokens
+        if chunk.choices and chunk.choices[0].delta.content:
+            yield chunk.choices[0].delta.content
+
+
 async def run(history: list[dict], query: str) -> AsyncIterator:
     metrics = Metrics()
     start = time.perf_counter()
 
     retrieval = asyncio.create_task(_retrieve(query))
-    context = await retrieval
 
-    messages = [{"role": "system", "content": SYSTEM}] + history + [
+    draft = [{"role": "system", "content": DRAFT_SYSTEM}, {"role": "user", "content": query}]
+    first = True
+    async for delta in _stream(draft, metrics):
+        if first:
+            metrics.ttft_ms = (time.perf_counter() - start) * 1000
+            first = False
+        yield delta
+
+    context = await retrieval
+    yield "\n\n"
+    grounded = [{"role": "system", "content": GROUNDED_SYSTEM}] + history + [
         {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}
     ]
-    metrics.llm_calls = 1
-
-    first = True
-    stream = await stream_completion(messages)
-    async for chunk in stream:
-        if chunk.usage:
-            metrics.prompt_tokens = chunk.usage.prompt_tokens
-            metrics.completion_tokens = chunk.usage.completion_tokens
-        if not chunk.choices:
-            continue
-        delta = chunk.choices[0].delta.content
-        if delta:
-            if first:
-                metrics.ttft_ms = (time.perf_counter() - start) * 1000
-                first = False
-            yield delta
+    async for delta in _stream(grounded, metrics):
+        yield delta
 
     metrics.total_ms = (time.perf_counter() - start) * 1000
     yield metrics

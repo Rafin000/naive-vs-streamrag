@@ -2,10 +2,15 @@
 
 A small agent that answers questions over a document set two ways and compares them:
 
-- **Naive RAG** runs sequentially: embed the query, retrieve top-k, then generate.
-- **StreamRAG** overlaps retrieval with the request and streams tokens to cut time to first token.
+- **Naive RAG** runs sequentially: embed the query, retrieve top-k, then generate. One model
+  call, lowest cost, but the user waits for retrieval before any token appears.
+- **StreamRAG** runs in two phases: it launches retrieval as a concurrent task and immediately
+  streams a short provisional answer from the model's own knowledge, then continues into a
+  grounded answer once the retrieved context arrives. This cuts time to first token, at the
+  cost of a second model call.
 
-Both paths share the same model, embeddings, and prompt so the comparison is fair. The frontend
+Both paths share the same model and embeddings, so the comparison is fair and exposes the real
+trade-off: **StreamRAG trades higher total cost for a lower time to first token.** The frontend
 shows live metrics per answer (TTFT, total time, tokens, cost) and a benchmark script runs the
 full head-to-head over a test set.
 
