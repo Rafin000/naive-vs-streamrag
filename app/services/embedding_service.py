@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.core.config import settings
 from app.services.openai_client import client
 

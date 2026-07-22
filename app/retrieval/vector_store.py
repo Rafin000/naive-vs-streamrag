@@ -13,9 +13,12 @@ class VectorStore:
     def search(self, query_vector: list[float], k: int) -> list[tuple[str, float]]:
         if self._vectors is None:
             return []
-        q = np.array(query_vector, dtype=np.float32)
-        norms = np.linalg.norm(self._vectors, axis=1) * np.linalg.norm(q) + 1e-9
-        sims = (self._vectors @ q) / norms
+        matrix = self._vectors.astype(np.float64)
+        q = np.asarray(query_vector, dtype=np.float64)
+        dots = (matrix * q).sum(axis=1)
+        denom = np.linalg.norm(matrix, axis=1) * np.linalg.norm(q)
+        sims = np.zeros(len(matrix))
+        np.divide(dots, denom, out=sims, where=denom > 0)
         top = np.argsort(-sims)[:k]
         return [(self._texts[i], float(sims[i])) for i in top]
 
