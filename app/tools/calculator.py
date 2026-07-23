@@ -13,6 +13,21 @@ _OPS = {
     ast.USub: operator.neg,
 }
 
+CALCULATOR_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "calculator",
+        "description": "Evaluate an arithmetic expression such as '199 * 12' and return the number.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "expression": {"type": "string", "description": "The arithmetic expression to evaluate."}
+            },
+            "required": ["expression"],
+        },
+    },
+}
+
 
 def _eval(node):
     if isinstance(node, ast.Constant):
@@ -24,11 +39,16 @@ def _eval(node):
     raise ValueError("unsupported expression")
 
 
-def maybe_calculate(query: str) -> float | None:
-    expr = re.sub(r"[^0-9+\-*/(). ]", "", query)
-    if not re.search(r"\d\s*[+\-*/]\s*\d", expr):
+def evaluate(expression: str) -> float | None:
+    expr = re.sub(r"[^0-9+\-*/(). ]", "", expression).strip()
+    if not expr:
         return None
     try:
         return round(_eval(ast.parse(expr, mode="eval").body), 4)
     except Exception:
         return None
+
+
+def looks_like_math(query: str) -> bool:
+    expr = re.sub(r"[^0-9+\-*/(). ]", "", query)
+    return bool(re.search(r"\d\s*[+\-*/]\s*\d", expr))

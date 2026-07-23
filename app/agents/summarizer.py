@@ -1,8 +1,8 @@
 from app.services.llm_service import complete
 
 SYSTEM = (
-    "You are a summarization agent. Condense the conversation into three concise "
-    "sentences, preserving names, numbers, and decisions."
+    "You are a summarization agent. Summarize the earlier conversation in a few short "
+    "sentences. Preserve every specific fact, name, price, and number exactly as stated."
 )
 
 

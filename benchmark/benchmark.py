@@ -16,7 +16,7 @@ async def _run_one(service, question: str) -> tuple[str, Metrics]:
     async for piece in service.run([], question):
         if isinstance(piece, Metrics):
             metrics = piece
-        else:
+        elif isinstance(piece, str):
             answer += piece
     return answer, metrics
 

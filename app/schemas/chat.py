@@ -13,3 +13,12 @@ class Metrics(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     llm_calls: int = 0
+
+
+class Thinking(BaseModel):
+    text: str
+
+
+class ToolCall(BaseModel):
+    tool: str
+    result: str

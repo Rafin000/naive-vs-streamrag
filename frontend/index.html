@@ -3,64 +3,205 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>StreamRAG vs Naive RAG</title>
+  <title>Naive RAG vs StreamRAG</title>
   <style>
     :root { color-scheme: light dark; }
-    body { font-family: system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }
-    h1 { font-size: 1.3rem; }
-    .row { display: flex; gap: .5rem; margin: 1rem 0; }
-    input, select, button { padding: .6rem; font-size: 1rem; }
-    input { flex: 1; }
-    #answer { white-space: pre-wrap; padding: 1rem; border: 1px solid #8884; border-radius: 8px; min-height: 3rem; }
-    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .5rem; margin-top: 1rem; }
-    .metric { border: 1px solid #8884; border-radius: 8px; padding: .6rem; }
-    .metric b { display: block; font-size: 1.2rem; }
-    .metric span { font-size: .75rem; opacity: .7; }
+    body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; margin-bottom: .2rem; }
+    p.sub { opacity: .7; margin-top: 0; margin-bottom: 1.8rem; }
+    .main { display: grid; grid-template-columns: 5fr 3fr; gap: 1.2rem; align-items: start; }
+    @media (max-width: 860px) { .main { grid-template-columns: 1fr; } }
+
+    .chat { display: flex; flex-direction: column; border: 1px solid #8884; border-radius: 12px; overflow: hidden; }
+    .thread { display: flex; flex-direction: column; gap: .7rem; padding: 1rem; height: 62vh; overflow-y: auto; }
+    .empty { opacity: .5; font-style: italic; margin: auto; }
+
+    .msg { display: flex; animation: fade .22s ease; }
+    @keyframes fade { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+    .msg.user { justify-content: flex-end; }
+    .msg.bot { justify-content: flex-start; }
+    .typing { display: inline-flex; gap: 5px; padding: .25rem 0; }
+    .typing span { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .3; animation: blink 1.2s infinite; }
+    .typing span:nth-child(2) { animation-delay: .2s; }
+    .typing span:nth-child(3) { animation-delay: .4s; }
+    @keyframes blink { 0%, 60%, 100% { opacity: .25; } 30% { opacity: .85; } }
+    .bubble { max-width: 82%; padding: .55rem .8rem; border-radius: 16px; line-height: 1.45; font-size: .92rem; }
+    .msg.user .bubble { background: #3b82f6; color: #fff; border-bottom-right-radius: 5px; white-space: pre-wrap; }
+    .msg.bot .bubble { background: rgba(128,128,128,.16); border-bottom-left-radius: 5px; }
+    .label { font-size: .72rem; opacity: .6; margin-bottom: .3rem; display: flex; justify-content: space-between; gap: .8rem; }
+    .tool { font-size: .78rem; margin-bottom: .4rem; padding: .25rem .5rem; border-radius: 6px; width: fit-content; background: #3b82f622; border: 1px solid #3b82f655; }
+    .thinking { font-style: italic; margin-bottom: .3rem; }
+    .answer { white-space: pre-wrap; }
+    .meta { font-size: .7rem; opacity: .55; margin-top: .4rem; }
+    .tool:empty, .thinking:empty, .meta:empty { display: none; }
+
+    .composer { display: flex; gap: .5rem; padding: .7rem; border-top: 1px solid #8884; flex-wrap: wrap; }
+    input, button { padding: .6rem; font-size: .95rem; }
+    input { flex: 1; min-width: 160px; }
+    button { cursor: pointer; }
+
+    .picker { position: relative; }
+    #pickerBtn { max-width: 190px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .menu {
+      position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30;
+      width: 340px; max-width: 88vw; max-height: 300px; overflow-y: auto;
+      background: Canvas; color: CanvasText; border: 1px solid #8886; border-radius: 8px;
+      box-shadow: 0 8px 26px #0005; padding: .3rem;
+    }
+    .menu .opt { padding: .5rem; border-radius: 6px; cursor: pointer; font-size: .87rem; line-height: 1.35; }
+    .menu .opt:hover { background: rgba(128,128,128,.16); }
+
+    .results { position: sticky; top: 1rem; border: 1px solid #8884; border-radius: 12px; padding: 1rem; }
+    .results h2 { font-size: 1rem; margin: 0 0 .2rem; }
+    .results .note { font-size: .78rem; opacity: .6; margin: 0 0 .7rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: right; padding: .45rem .3rem; border-bottom: 1px solid #8883; }
+    th:first-child, td:first-child { text-align: left; opacity: .75; }
   </style>
 </head>
 <body>
-  <h1>StreamRAG vs Naive RAG</h1>
-  <div class="row">
-    <input id="query" placeholder="Ask something about RAG, embeddings, agents..." />
-    <select id="path">
-      <option value="naive">Naive</option>
-      <option value="stream">Stream</option>
-    </select>
-    <button id="send">Ask</button>
+  <h1>Naive RAG vs StreamRAG</h1>
+  <p class="sub">Ask about Azure Bay Resort. Each message runs both paths; the panel tracks average metrics across the chat.</p>
+
+  <div class="main">
+    <div class="chat">
+      <div class="thread" id="thread">
+        <div class="empty" id="empty">Pick a question or type your own to start.</div>
+      </div>
+      <div class="composer">
+        <div class="picker">
+          <button id="pickerBtn" type="button">Pick a question ▾</button>
+          <div class="menu" id="pickerMenu" hidden></div>
+        </div>
+        <input id="query" placeholder="…or type your own" />
+        <button id="send">Send</button>
+        <button id="reset" title="Clear the chat and averages">Reset</button>
+      </div>
+    </div>
+
+    <div class="results">
+      <h2>Average results</h2>
+      <p class="note">Mean across all messages in this chat.</p>
+      <table>
+        <thead><tr><th>Metric</th><th>Naive</th><th>Stream</th></tr></thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
   </div>
-  <div id="answer"></div>
-  <div class="metrics" id="metrics"></div>
 
   <script>
     const API = "http://localhost:8000/ask";
-    const session = crypto.randomUUID();
-    const answerEl = document.getElementById("answer");
-    const metricsEl = document.getElementById("metrics");
+    const QUESTIONS = [
+      "Is there a restaurant at the resort, and what are the dining options?",
+      "What room categories are available and how much do they cost per night?",
+      "How many rooms does the resort have?",
+      "What is on the menu at the Saltwater Grill and what are the prices?",
+      "What time is check-in and check-out, and can I check in early?",
+      "How much is the airport pickup and how long does it take?",
+      "What entertainment and activities are available?",
+      "How much do the spa treatments cost?",
+      "What water sports can I do and what do they cost?",
+      "Is breakfast included, and what are the buffet hours and prices?",
+      "What is the cancellation policy and the deposit?",
+      "Are pets allowed at the resort?",
+      "What is there for kids at the resort?",
+      "Is wifi and parking free?",
+      "How can I contact the resort to book a room?",
+      "How much for 3 nights in an Ocean View room? Calculate 180 * 3",
+      "How much is an Ocean View room per night?",
+      "How many guests does it fit?",
+      "Does it have a balcony?",
+    ];
 
-    function renderMetrics(m) {
-      const cost = (m.prompt_tokens * 0.15 + m.completion_tokens * 0.60) / 1e6;
-      const cells = [
-        ["TTFT", m.ttft_ms.toFixed(0) + " ms"],
-        ["Total", m.total_ms.toFixed(0) + " ms"],
-        ["Prompt tok", m.prompt_tokens],
-        ["Output tok", m.completion_tokens],
-        ["LLM calls", m.llm_calls],
-        ["Cost", "$" + cost.toFixed(6)],
-      ];
-      metricsEl.innerHTML = cells.map(([k, v]) => `<div class="metric"><b>${v}</b><span>${k}</span></div>`).join("");
+    const queryInput = document.getElementById("query");
+    const thread = document.getElementById("thread");
+    const body = document.getElementById("results-body");
+    const pickerBtn = document.getElementById("pickerBtn");
+    const pickerMenu = document.getElementById("pickerMenu");
+    QUESTIONS.forEach((q) => {
+      const o = document.createElement("div");
+      o.className = "opt"; o.textContent = q;
+      o.addEventListener("click", () => { queryInput.value = q; pickerMenu.hidden = true; queryInput.focus(); });
+      pickerMenu.appendChild(o);
+    });
+    pickerBtn.addEventListener("click", (e) => { e.stopPropagation(); pickerMenu.hidden = !pickerMenu.hidden; });
+    document.addEventListener("click", (e) => { if (!e.target.closest(".picker")) pickerMenu.hidden = true; });
+
+    let sessions = newSessions();
+    const totals = { naive: blank(), stream: blank() };
+    function newSessions() { const t = Date.now(); return { naive: "chat-naive-" + t, stream: "chat-stream-" + t }; }
+    function blank() { return { ttft: 0, total: 0, ptok: 0, ctok: 0, cost: 0, n: 0 }; }
+    const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+    function addMetrics(path, m) {
+      const t = totals[path];
+      t.ttft += m.ttft_ms; t.total += m.total_ms; t.ptok += m.prompt_tokens; t.ctok += m.completion_tokens;
+      t.cost += (m.prompt_tokens * 0.15 + m.completion_tokens * 0.60) / 1e6; t.n += 1;
+      renderAverages();
     }
 
-    async function ask() {
-      answerEl.textContent = "";
-      metricsEl.innerHTML = "";
+    function renderAverages() {
+      const ms = (v) => v.toFixed(0) + " ms";
+      const intv = (v) => Math.round(v);
+      const usd = (v) => "$" + v.toFixed(6);
+      const avg = (path, key, fmt) => (totals[path].n ? fmt(totals[path][key] / totals[path].n) : "—");
+      const rows = [
+        ["Avg TTFT", "ttft", ms],
+        ["Avg total", "total", ms],
+        ["Avg prompt token", "ptok", intv],
+        ["Avg output token", "ctok", intv],
+        ["Avg cost", "cost", usd],
+      ];
+      body.innerHTML =
+        rows.map(([label, key, fmt]) => `<tr><td>${label}</td><td>${avg("naive", key, fmt)}</td><td>${avg("stream", key, fmt)}</td></tr>`).join("") +
+        `<tr><td>Turns</td><td>${totals.naive.n}</td><td>${totals.stream.n}</td></tr>`;
+    }
+
+    function botBubble(path) {
+      const name = path === "naive" ? "Naive RAG" : "StreamRAG";
+      const msg = document.createElement("div");
+      msg.className = "msg bot";
+      msg.innerHTML =
+        `<div class="bubble" data-path="${path}"><div class="label"><span>${name}</span><span class="ttft"></span></div>` +
+        `<div class="tool"></div><div class="thinking"></div>` +
+        `<div class="typing"><span></span><span></span><span></span></div>` +
+        `<div class="answer"></div><div class="meta"></div></div>`;
+      thread.appendChild(msg);
+      return msg.querySelector(".bubble");
+    }
+
+    function userBubble(text) {
+      const msg = document.createElement("div");
+      msg.className = "msg user";
+      msg.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
+      thread.appendChild(msg);
+    }
+
+    const dataOf = (ev) => ev.slice(ev.indexOf("data: ") + 6);
+    const scroll = () => { thread.scrollTop = thread.scrollHeight; };
+
+    async function runPath(path, query, bubble) {
+      const answerEl = bubble.querySelector(".answer");
+      const thinkingEl = bubble.querySelector(".thinking");
+      const toolEl = bubble.querySelector(".tool");
+      const ttftEl = bubble.querySelector(".ttft");
+      const metaEl = bubble.querySelector(".meta");
+      const typingEl = bubble.querySelector(".typing");
+      ttftEl.textContent = "…";
+      const start = performance.now();
+      let firstToken = true;
+      const markFirst = () => {
+        if (firstToken) {
+          ttftEl.textContent = (performance.now() - start).toFixed(0) + " ms";
+          typingEl.remove();
+          firstToken = false;
+        }
+      };
+
       const res = await fetch(API, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          session_id: session,
-          query: document.getElementById("query").value,
-          path: document.getElementById("path").value,
-        }),
+        body: JSON.stringify({ session_id: sessions[path], query, path }),
       });
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -73,17 +214,47 @@
         buffer = events.pop();
         for (const ev of events) {
           if (ev.startsWith("event: metrics")) {
-            renderMetrics(JSON.parse(ev.split("data: ")[1]));
+            const m = JSON.parse(dataOf(ev));
+            metaEl.textContent = `total ${m.total_ms.toFixed(0)} ms · ${m.prompt_tokens}+${m.completion_tokens} token`;
+            addMetrics(path, m);
+          } else if (ev.startsWith("event: tool")) {
+            const t = JSON.parse(dataOf(ev));
+            toolEl.textContent = "tool called: " + t.tool;
+          } else if (ev.startsWith("event: thinking")) {
+            markFirst();
+            thinkingEl.textContent += JSON.parse(dataOf(ev)).token;
           } else if (ev.startsWith("data: ")) {
-            const payload = JSON.parse(ev.slice(6));
-            if (payload.token) answerEl.textContent += payload.token;
+            const payload = JSON.parse(dataOf(ev));
+            if (payload.token) { markFirst(); answerEl.textContent += payload.token; }
           }
+          scroll();
         }
       }
     }
 
+    function ask() {
+      const query = queryInput.value.trim();
+      if (!query) return;
+      document.getElementById("empty")?.remove();
+      userBubble(query);
+      const naiveB = botBubble("naive");
+      const streamB = botBubble("stream");
+      scroll();
+      queryInput.value = "";
+      runPath("naive", query, naiveB);
+      runPath("stream", query, streamB);
+    }
+
+    queryInput.addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
     document.getElementById("send").addEventListener("click", ask);
-    document.getElementById("query").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+    document.getElementById("reset").addEventListener("click", () => {
+      thread.innerHTML = `<div class="empty" id="empty">Pick a question or type your own to start.</div>`;
+      totals.naive = blank(); totals.stream = blank();
+      sessions = newSessions();
+      renderAverages();
+    });
+
+    renderAverages();
   </script>
 </body>
 </html>
