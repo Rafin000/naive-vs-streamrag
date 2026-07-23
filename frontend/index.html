@@ -153,8 +153,7 @@
         ["Avg cost", "cost", usd],
       ];
       body.innerHTML =
-        rows.map(([label, key, fmt]) => `<tr><td>${label}</td><td>${avg("naive", key, fmt)}</td><td>${avg("stream", key, fmt)}</td></tr>`).join("") +
-        `<tr><td>Turns</td><td>${totals.naive.n}</td><td>${totals.stream.n}</td></tr>`;
+        rows.map(([label, key, fmt]) => `<tr><td>${label}</td><td>${avg("naive", key, fmt)}</td><td>${avg("stream", key, fmt)}</td></tr>`).join("");
     }
 
     function botBubble(path) {
