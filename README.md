@@ -1,24 +1,24 @@
 # Naive RAG vs StreamRAG
 
-A small retrieval-augmented agent that answers questions over a document set **two different
-ways** and measures the trade-off between them.
+A small full-stack agent that answers questions about a fictional hotel, **Azure Bay Resort**,
+two different ways and measures the trade-off between them:
 
-- **Naive RAG** runs sequentially: embed the query → retrieve top-k documents → generate the
-  answer. One model call, lowest cost, but the user sees nothing until retrieval finishes, so
+- **Naive RAG** runs sequentially: embed the query → retrieve top-k documents → generate one
+  grounded answer. One model call, lowest cost, but nothing appears until retrieval finishes, so
   time to first token (TTFT) is high.
-- **StreamRAG** runs in two phases. It launches retrieval as a concurrent task and *immediately*
-  streams a short provisional answer from the model's own knowledge, then continues straight into
-  a grounded answer once the retrieved context arrives. First token appears much sooner, at the
-  cost of a second model call.
+- **StreamRAG** launches retrieval as a concurrent task and *immediately* streams a short,
+  fact-free "thinking" line (e.g. *"Checking…"*) while retrieval runs. When the documents arrive
+  it streams the grounded answer. Two model calls, so the first token appears much sooner at the
+  cost of slightly higher total time and cost.
 
-Both paths use the same model, embeddings, documents, and top-k, so the comparison is fair. It
-exposes the real trade-off:
+Both paths use the same model, embeddings, documents, and top-k, so the comparison is fair.
+See [BENCHMARK.md](BENCHMARK.md) for measured results; the short version:
 
-> **StreamRAG trades higher total cost for a much lower time to first token.**
-> **Naive RAG is cheaper and slightly more accurate, but slower to respond.**
+> **StreamRAG nearly halves time-to-first-token; Naive is cheaper and slightly faster end-to-end.
+> Accuracy is a tie. Use StreamRAG when retrieval is slow or perceived latency matters; use Naive
+> when retrieval is fast and cost matters.**
 
-The frontend shows live metrics under each answer (TTFT, total time, tokens, cost). The benchmark
-script runs the full head-to-head over a test set and scores accuracy with an LLM judge.
+The frontend is a chat UI that runs both paths on every message and tracks running averages.
 
 ## How it works
 
@@ -30,40 +30,43 @@ script runs the full head-to-head over a test set and scores accuracy with an LL
 embed(query) → vector search → build prompt with context → stream one grounded answer
 ```
 
-The prompt can't be sent until retrieval is done, because the context is part of the prompt.
-That single dependency is why TTFT is high.
+The prompt can't be sent until retrieval is done (the context is part of the prompt). That single
+dependency is why TTFT is high.
 
-**StreamRAG** (`app/services/stream_rag_service.py`) — two prompts, two calls, overlapped:
+**StreamRAG** (`app/services/stream_rag_service.py`) — two calls, retrieval overlapped:
 
 ```
-start retrieval as a background task
-   └─ meanwhile: stream a quick provisional answer (no context)   ← first token appears here
+start retrieval as a concurrent asyncio task
+   └─ meanwhile: stream a short fact-free "thinking" line   ← first token appears here
 when retrieval finishes:
-   └─ stream the grounded answer, continuing from the provisional draft
+   └─ stream the grounded answer using the retrieved context
 ```
 
-The provisional phase needs no context, so it can start instantly while retrieval runs in
-parallel via `asyncio`. The grounded phase receives the provisional draft as a prior assistant
-turn, so the two read as one continuous answer instead of two separate replies.
+The thinking line needs no context, so it starts while retrieval runs in parallel (verified: the
+retrieval task begins within ~4 ms and finishes before the framing model's first token). It is
+deliberately **fact-free** — the documents hold private hotel details the model can't know, so a
+provisional *answer* would hallucinate; a neutral acknowledgement can't.
 
 ### The agent harness
 
-Around the model, the agent (`app/services/agent_service.py`) adds three things the assessment
-asks for:
+The agent (`app/services/agent_service.py`) wraps the model with:
 
-- **Tool / function calling** — a calculator (`app/tools/calculator.py`). Arithmetic queries are
-  computed exactly with a safe AST evaluator instead of being guessed by the model.
-- **Memory** — a per-session message list (`app/memory/session_store.py`) resent each turn so the
-  agent remembers the conversation.
+- **Tool (real function calling)** — a calculator (`app/tools/calculator.py`). A cheap check
+  routes arithmetic to a tool loop where the model is given the tool schema, **decides** to call
+  `calculator(expression)`, the app evaluates it with a safe AST evaluator, and the model then
+  **composes** the answer from the result. It is genuine OpenAI function calling, not a hardcoded
+  reply.
+- **Memory** — a per-session message list (`app/memory/session_store.py`) keyed by `session_id`
+  and resent each turn, so follow-ups like *"how many guests does it fit?"* resolve from context.
 - **Context compression** — when a session's history passes a token budget, the oldest turns are
   summarized by a **sub-agent** (`app/agents/summarizer.py`) and replaced with a short summary,
   keeping recent turns verbatim.
 
 ### Retrieval
 
-Documents in `app/data/docs/` are embedded once at startup and stored in an in-memory NumPy
-cosine store (`app/retrieval/vector_store.py`). This is intentional for the assessment; the
-store's interface is tiny, so it can be swapped for pgvector / Qdrant / Vectorize in production.
+The 19 documents in `app/data/docs/` are embedded once at startup and stored in an in-memory
+NumPy cosine store (`app/retrieval/vector_store.py`). This is intentional for the assessment; the
+interface is tiny, so it can be swapped for pgvector / Qdrant / Vectorize in production.
 
 ## Project layout
 
@@ -71,15 +74,15 @@ store's interface is tiny, so it can be swapped for pgvector / Qdrant / Vectoriz
 app/
   core/         config (secrets via pydantic-settings) and logging
   api/routes/   chat (SSE streaming) and health endpoints
-  schemas/      request and metrics models
+  schemas/      request, metrics, thinking, and tool-call models
   services/     embedding, llm, naive_rag, stream_rag, agent orchestration
   agents/       summarizer sub-agent (also used for memory compression)
-  tools/        calculator tool
+  tools/        calculator tool (function-calling schema + safe evaluator)
   memory/       in-memory per-session message store
   retrieval/    in-memory cosine vector store and startup indexer
-  data/         knowledge docs and test set
+  data/         hotel documents and the test set
 benchmark/      benchmark runner and llm-as-judge scorer
-frontend/       single-page client with a live metrics panel
+frontend/       single-page chat UI with a running-averages panel
 ```
 
 ## Setup
@@ -87,77 +90,57 @@ frontend/       single-page client with a live metrics panel
 Requires **Python 3.9+** and an OpenAI API key.
 
 ```bash
-# 1. clone and enter the project
-cd naive-vs-streamrag
-
-# 2. create a virtualenv and install dependencies
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-# 3. add your OpenAI key
-cp .env.example .env
-# then edit .env and set OPENAI_API_KEY=sk-...
+cp .env.example .env        # then set OPENAI_API_KEY=sk-... in .env
 ```
 
 `.env` is git-ignored, so your key is never committed.
 
-## Run the server
+## Run
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-The API is now at `http://localhost:8000`. On startup it embeds the documents in
-`app/data/docs/` and logs how many were indexed.
-
-Check it is up:
+The API is at `http://localhost:8000`; on startup it embeds the hotel documents. Check it:
 
 ```bash
-curl http://localhost:8000/health
-# {"status":"ok"}
+curl http://localhost:8000/health   # {"status":"ok"}
 ```
 
-## Use the frontend
+Then open `frontend/index.html` in a browser. Pick a question from the dropdown (or type your
+own) and hit **Send** — each message runs **both** paths side by side, streaming live, and the
+panel on the right tracks average TTFT, total time, tokens, and cost across the chat.
 
-Open `frontend/index.html` in your browser. Type a question, pick **Naive** or **Stream**, and
-press Ask. The answer streams in live, and the metrics panel below it shows TTFT, total time,
-tokens, and cost. Switch the dropdown and ask the same question to feel the TTFT difference.
-
-The frontend expects the server on `http://localhost:8000` (CORS is open in dev).
+Things to try:
+- A normal question (rooms, menu, spa, airport pickup) — watch StreamRAG's thinking line appear
+  before Naive's answer.
+- The calculator question (*"…Calculate 180 * 3"*) — the tool badge shows `tool called: calculator`.
+- The Ocean View sequence in order — a follow-up like *"how many guests does it fit?"* resolves
+  from memory.
 
 ## API
 
-`POST /ask` — streams the answer as Server-Sent Events.
-
-Request body:
+`POST /ask` streams Server-Sent Events. Body:
 
 ```json
-{ "session_id": "abc", "query": "How does StreamRAG reduce latency?", "path": "stream" }
+{ "session_id": "abc", "query": "How much is an Ocean View room?", "path": "stream" }
 ```
 
-`path` is `"naive"` or `"stream"`. The response is an SSE stream of `data: {"token": "..."}`
-events, followed by a `metrics` event with the timing and token counts, then a `done` event.
-
-Example with curl:
-
-```bash
-curl -N -X POST http://localhost:8000/ask \
-  -H 'Content-Type: application/json' \
-  -d '{"session_id":"demo","query":"What is time to first token?","path":"stream"}'
-```
+`path` is `"naive"` or `"stream"`. Events: `data: {"token": …}` (answer tokens),
+`event: thinking` (StreamRAG's framing line), `event: tool` (a tool call), `event: metrics`
+(timings and token counts), then `event: done`.
 
 ## Benchmark
-
-Runs every question in `app/data/testset.json` through both paths and reports averaged metrics,
-scoring accuracy with an LLM judge (`benchmark/judge.py`).
 
 ```bash
 python -m benchmark.benchmark
 ```
 
-Reports, per path: average TTFT, average total latency, average cost in USD, and average
-accuracy score (0–5).
+Runs all 15 questions in `app/data/testset.json` through both paths and reports average TTFT,
+total latency, cost, and an LLM-judged accuracy score. Results and discussion: [BENCHMARK.md](BENCHMARK.md).
 
 ## Docker
 
@@ -165,7 +148,7 @@ accuracy score (0–5).
 docker compose up --build
 ```
 
-Reads `OPENAI_API_KEY` from your `.env` and serves the API on port 8000.
+Reads `OPENAI_API_KEY` from `.env` and serves the API on port 8000.
 
 ## Configuration
 
@@ -179,12 +162,12 @@ Set in `.env` (see `.env.example`); all but the key have defaults:
 | `RETRIEVAL_TOP_K` | `3` | documents retrieved per query |
 | `CONTEXT_TOKEN_BUDGET` | `2000` | history size before compression kicks in |
 
-## Design notes
+## Design notes and honest limitations
 
-- **Same model both paths** so the benchmark measures the *strategy*, not a model difference.
-- **In-memory store and memory** are deliberate for a self-contained assessment; production would
-  use a vector database and an async ingestion pipeline (an endpoint queues documents; a worker
-  chunks, embeds, and upserts them), plus a shared session store such as Redis.
-- **Honest trade-off:** StreamRAG's provisional phase answers from the model's own knowledge
-  before grounding, so it can occasionally state something the grounded phase then corrects. That
-  is the accuracy cost of lower latency, and the benchmark reflects it.
+- **Same model both paths**, so the benchmark measures the *strategy*, not a model difference.
+- **StreamRAG wins TTFT, not total time.** Because retrieval here is a fast in-memory lookup, the
+  framing phase is pure overhead on total latency — StreamRAG's real advantage would grow if
+  retrieval were slow (remote vector DB, web search, or streamed/voice input). See BENCHMARK.md.
+- **In-memory store, memory, and sessions** are deliberate for a self-contained demo. Production
+  would use a vector database with async ingestion, and a shared session store (e.g. Redis) keyed
+  by the same `session_id` the frontend already sends. Reloading the page starts a new session.
