@@ -191,7 +191,6 @@
       let firstToken = true;
       const markFirst = () => {
         if (firstToken) {
-          ttftEl.textContent = "TTFT " + (performance.now() - start).toFixed(0) + " ms";
           typingEl.remove();
           firstToken = false;
         }
@@ -214,6 +213,7 @@
         for (const ev of events) {
           if (ev.startsWith("event: metrics")) {
             const m = JSON.parse(dataOf(ev));
+            ttftEl.textContent = "TTFT " + m.ttft_ms.toFixed(0) + " ms";
             metaEl.textContent = `total ${m.total_ms.toFixed(0)} ms · ${m.prompt_tokens}+${m.completion_tokens} token`;
             addMetrics(path, m);
           } else if (ev.startsWith("event: tool")) {
