@@ -186,12 +186,12 @@
       const ttftEl = bubble.querySelector(".ttft");
       const metaEl = bubble.querySelector(".meta");
       const typingEl = bubble.querySelector(".typing");
-      ttftEl.textContent = "…";
+      ttftEl.textContent = "TTFT …";
       const start = performance.now();
       let firstToken = true;
       const markFirst = () => {
         if (firstToken) {
-          ttftEl.textContent = (performance.now() - start).toFixed(0) + " ms";
+          ttftEl.textContent = "TTFT " + (performance.now() - start).toFixed(0) + " ms";
           typingEl.remove();
           firstToken = false;
         }
