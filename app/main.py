@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import chat, health
 from app.core.logging import configure_logging
@@ -23,6 +24,8 @@ def create_app() -> FastAPI:
     )
     app.include_router(health.router)
     app.include_router(chat.router)
+    # Serve the frontend at / so the whole app is one origin (must be mounted last).
+    app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
     return app
 
 

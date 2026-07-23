@@ -90,7 +90,7 @@
   </div>
 
   <script>
-    const API = "http://localhost:8000/ask";
+    const API = (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000") + "/ask";
     const QUESTIONS = [
       "Is there a restaurant at the resort, and what are the dining options?",
       "What room categories are available and how much do they cost per night?",
