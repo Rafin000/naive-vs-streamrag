@@ -1,5 +1,7 @@
 # Naive RAG vs StreamRAG
 
+**▶ Live demo: http://16.171.174.104:8000** — hosted on AWS EC2; try it in your browser.
+
 A small full-stack agent that answers questions about a fictional hotel, **Azure Bay Resort**,
 two different ways and measures the trade-off between them:
 
